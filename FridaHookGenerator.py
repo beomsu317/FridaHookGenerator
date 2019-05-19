@@ -1,8 +1,8 @@
-# 1. so file intercept... -l
-# 2. instantly hook with frida
-# 3. stack trace -s
-# 4. constructor hook -c
-# 5. naming -n 
+# 1. so file intercept... 
+# 2. backtrace 
+# 3. instantly hook with frida
+# 4. constructor hook 
+# 5. no method in class not declare 
 
 import os
 import sys
@@ -13,35 +13,39 @@ import json
 
 class FridaHookGenerator :
 
-	def __init__(self, directory, output, library=False,  arguments=False, ret=False) :
+	def __init__(self, sDirectory, output, library=False,  arguments=False, ret=False,mitm=False) :
+
+		logging.getLogger().setLevel(logging.INFO)
 			
 		# getcwd
 		self.cwd = os.getcwd()
 
 		# setting smali file directory absolute path
-		self.smali_directory = os.path.abspath(directory)
+		self.smali_directory = os.path.abspath(sDirectory)
 		self.library = library
 		self.arguments = arguments
 		self.ret = ret
 		self.output = output
+		self.mitm = mitm
 
 		self.smali_files = []
 		self.JavaScript = []
 
+	def mitm(self):
+		JavaScript = ''
+		return JavaScript
 
 	def hookLibrary(self):
-		global JavaScript
-
-		'''
-		print '[+] create library hook code...'
+		
+		JavaScript = ''
 		JavaScript += '\nInterceptor.attach(Module.findExportByName(null,"dlopen"),{\n'
 		JavaScript += '    onEnter: function(args){\n'
 		JavaScript += '        console.log(\'[+] Loading libraries\');\n'
 		JavaScript += '        this.soName = Memory.readCString(args[0]);\n'
 		JavaScript += '        console.log(\'    [+] \' + this.soName);\n'
 		JavaScript += '    }\n'
-		JavaScript += '});\n'
-		'''
+		JavaScript += '});\n\n'
+		return JavaScript
 	
 	def getSmaliPaths(self):
 
@@ -58,7 +62,7 @@ class FridaHookGenerator :
 		
 		# check smali_files list is null
 		if len(self.smali_files) == 0:
-			print("Can not find smali files.\nPlease input your smali files in \"" + self.smali_directory+"\" directory.\n")
+			logging.critical("Can not find smali files.\nPlease input your smali files in \"" + self.smali_directory+"\" directory.\n")
 			exit(0)
 
 	def extractArguments(self, method_arg):
@@ -179,10 +183,11 @@ class FridaHookGenerator :
 	
 	def save(self):
 		f = open(self.cwd + self.output, "w")
-		f.write("Java.perform(function() { \n    console.log();\n\n%s });" % ("\n".join(self.JavaScript)))
+		f.write(self.getFullJavaScript())
 		f.close()
 
 	def run(self):
+		print('[+] Generate Hook Codes...')
 		threads = []
 		for i in range(0, 100) :
 			threads.append(threading.Thread(target = self.target))
@@ -203,10 +208,11 @@ class FridaHookGenerator :
 
 		JavaScript = ""
 
-		# JavaScript
-		# print("[+] create Java hook code...")
 
 		smali_file = open(smali_file_path,'r')
+
+		# JavaScript
+		logging.debug('[+] ' + smali_file_path + '\n')
 		
 		# read by line
 		smali_file_lines = smali_file.readlines()
@@ -316,11 +322,25 @@ class FridaHookGenerator :
 		os.chdir(self.cwd)
 		return JavaScript
 
+	def getFullJavaScript(self):
+
+		JavaScript = ''
+		
+		if self.library:
+			JavaScript += self.hookLibrary()
+
+		JavaScript += 'Java.perform(function() { \n    console.log();\n\n'
+
+		if self.mitm:
+			JavaScript += self.mitm()
+
+		JavaScript += '\n'.join(self.JavaScript)
+		JavaScript += '});'
+
+		print('[+] Done!')
+		return JavaScript
 
 if __name__ == "__main__":
-
-	logger = logging.getLogger()
-	logger.setLevel(logging.DEBUG)
 
 	'''
 	parser = argparse.ArgumentParser()
@@ -329,10 +349,10 @@ if __name__ == "__main__":
 	config_filepath = os.path.abspath(args.config)
 	'''
 
-	config_filepath = "./sample.json"
+	config_filepath = "./config/sample.json"
 
 	if not os.path.isfile(config_filepath) :
-		print("Can not find configure file.\n")
+		logging.critical("Can not find configure file.\n")
 		exit(0)
 
 	config = {}
@@ -342,27 +362,33 @@ if __name__ == "__main__":
 		except :
 			pass
 
-	if config.get('smaliDirectory',False) == False:
-		print("Set up \'smaliDirectory\' in your json.\n")
-		exit()
-
-	if config.get('output',False) == False:
-		print("Set up \'output\' filename in your json.\n")
+	# config file check
+	if not ('smaliDirectory' in config) or  \
+	not ('output' in config) or \
+	not ('options' in config) or \
+	not ('library' in config['options']) or \
+	not ('arguments' in config['options']) or\
+	not ('return' in config['options']) or \
+	not ('mitm' in config['options']) :
+		logging.critical("Set up your config file.\n")
 		exit()
 
 	sDir = config['smaliDirectory']
 
 	if os.path.exists(sDir) :
 		fmg = FridaHookGenerator(
-			directory = sDir,
+			sDirectory = sDir,
 			output = config['output'],
 			library = config['options']['library'],
 			arguments = config['options']['arguments'],
 			ret = config['options']['return'],
+			mitm = config['options']['mitm']
 		)
 		fmg.getSmaliPaths()
 		fmg.run()
+
 		if config['output'] != "":
 			fmg.save()
+
 	else :
-		print("Can not find smali directory.")
+		logging.critical("Can not find smali directory.\n")
