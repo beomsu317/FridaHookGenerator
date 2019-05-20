@@ -3,6 +3,7 @@
 # 3. instantly hook with frida
 # 4. constructor hook 
 # 5. no method in class not declare 
+# 6. output is directory
 
 import os
 import sys
@@ -13,7 +14,7 @@ import json
 
 class FridaHookGenerator :
 
-	def __init__(self, sDirectory, output, library=False,  arguments=False, ret=False,mitm=False) :
+	def __init__(self, sDirectory, output, library=False, arguments=False, ret=False, spb=False, oc=False) :
 
 		logging.getLogger().setLevel(logging.INFO)
 			
@@ -26,17 +27,27 @@ class FridaHookGenerator :
 		self.arguments = arguments
 		self.ret = ret
 		self.output = output
-		self.mitm = mitm
+		self.spb = spb
+		self.onlyCode = oc
 
 		self.smali_files = []
 		self.JavaScript = []
 
-	def mitm(self):
+	def sslPinningBypass(self):
+		print("[+] Generate SSL Pinning Bypass Code...")
 		JavaScript = ''
+		JavaScript += '    // SSL Pinning Bypass Start---------------------------------\n'
+		JavaScript += '    var array_list = Java.use("java.util.ArrayList");\n'
+		JavaScript += '    var ApiClient = Java.use("com.android.org.conscrypt.TrustManagerImpl");\n\n'
+		JavaScript += '    ApiClient.checkTrustedRecursive.implementation = function(arg1,arg2,arg3,arg4,arg5,arg6) {\n'
+		JavaScript += '        var k = array_list.$new();\n'
+		JavaScript += '        return k;\n'
+		JavaScript += '    }\n'
+		JavaScript += '    // SSL Pinning Bypass End ----------------------------------\n\n'
 		return JavaScript
 
 	def hookLibrary(self):
-		
+		print("[+] Generate Library Hook Code...")
 		JavaScript = ''
 		JavaScript += '\nInterceptor.attach(Module.findExportByName(null,"dlopen"),{\n'
 		JavaScript += '    onEnter: function(args){\n'
@@ -182,7 +193,7 @@ class FridaHookGenerator :
 		return args
 	
 	def save(self):
-		f = open(self.cwd + self.output, "w")
+		f = open(self.output, "w")
 		f.write(self.getFullJavaScript())
 		f.close()
 
@@ -329,13 +340,16 @@ class FridaHookGenerator :
 		if self.library:
 			JavaScript += self.hookLibrary()
 
-		JavaScript += 'Java.perform(function() { \n    console.log();\n\n'
+		if not self.onlyCode:
+			JavaScript += 'Java.perform(function() { \n    console.log();\n\n'
 
-		if self.mitm:
-			JavaScript += self.mitm()
+		if self.spb:
+			JavaScript += self.sslPinningBypass()
 
 		JavaScript += '\n'.join(self.JavaScript)
-		JavaScript += '});'
+
+		if not self.onlyCode:
+			JavaScript += '});'
 
 		print('[+] Done!')
 		return JavaScript
@@ -362,6 +376,7 @@ if __name__ == "__main__":
 		except :
 			pass
 
+
 	# config file check
 	if not ('smaliDirectory' in config) or  \
 	not ('output' in config) or \
@@ -369,8 +384,18 @@ if __name__ == "__main__":
 	not ('library' in config['options']) or \
 	not ('arguments' in config['options']) or\
 	not ('return' in config['options']) or \
-	not ('mitm' in config['options']) :
+	not ('spb' in config['options']) or \
+	not ('oc' in config['options']) :
 		logging.critical("Set up your config file.\n")
+		exit()
+
+	# change smalidirectory && output \ to /
+	config['smaliDirectory'].replace('\\','/')
+	config['output'].replace('\\','/')
+
+	# if output is directory
+	if os.path.isdir(config['output']):
+		print('Output is directory.\n')
 		exit()
 
 	sDir = config['smaliDirectory']
@@ -382,7 +407,8 @@ if __name__ == "__main__":
 			library = config['options']['library'],
 			arguments = config['options']['arguments'],
 			ret = config['options']['return'],
-			mitm = config['options']['mitm']
+			spb = config['options']['spb'],
+			oc = config['options']['oc']
 		)
 		fmg.getSmaliPaths()
 		fmg.run()

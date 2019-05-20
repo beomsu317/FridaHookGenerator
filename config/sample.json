@@ -1,10 +1,11 @@
 {
 	"smaliDirectory": "C:/Users/bs/Desktop/Toss/Frida/smali",
-    "output": "./hooking.js",
+    "output": "C:/Users/bs/Desktop/Toss/Frida/hooking.js",
     "options": {
         "library": false,
         "arguments": true,
         "return": true,
-		"mitm":false	
+		"spb":false,
+		"oc":true
     }
 }
