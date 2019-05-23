@@ -1,9 +1,8 @@
-# 1. so file intercept... 
+# 1. so file intercept... and library method
 # 2. backtrace 
 # 3. instantly hook with frida
 # 4. constructor hook 
 # 5. no method in class not declare 
-# 6. output is directory
 
 import os
 import sys
@@ -14,7 +13,7 @@ import json
 
 class FridaHookGenerator :
 
-	def __init__(self, sDirectory, output, library=False, arguments=False, ret=False, spb=False, oc=False) :
+	def __init__(self, sDirectory, output, library=False, arguments=False, ret=False, spb=False, exportModules=False,importModules=False , oc=False) :
 
 		logging.getLogger().setLevel(logging.INFO)
 			
@@ -28,10 +27,34 @@ class FridaHookGenerator :
 		self.ret = ret
 		self.output = output
 		self.spb = spb
+		self.exportModules = exportModules
+		self.importModules = importModules
 		self.onlyCode = oc
 
 		self.smali_files = []
 		self.JavaScript = []
+
+	def showImportModules(self):
+		print "[+] Generate Print Import Modules..."
+		JavaScript = ''
+		JavaScript += '\nModule.enumerateImports("%s", {\n'
+		JavaScript += '    onMatch: function(imp){\n'
+		JavaScript += '        console.log(\'[+] Import Module Name: \' + imp.name + \' - Module: \' + imp.module + \' - Address: \' + imp.address.toString());\n'
+		JavaScript += '    }, \n'
+		JavaScript += '    onComplete: function(){}\n'
+		JavaScript += '});\n'
+		return JavaScript
+
+	def showExportModules(self):
+		print "[+] Generate Print Export Modules..."
+		JavaScript = ''
+		JavaScript += '\nProcess.enumerateModules({\n'
+		JavaScript += '    onMatch: function(module){\n'
+		JavaScript += '        console.log(\'[+] Export Module name: \' + module.name + " - " + "Base Address: " + module.base.toString());\n'
+		JavaScript += '    }, \n'
+		JavaScript += '    onComplete: function(){}\n'
+		JavaScript += '});\n'
+		return JavaScript
 
 	def sslPinningBypass(self):
 		print("[+] Generate SSL Pinning Bypass Code...")
@@ -47,8 +70,9 @@ class FridaHookGenerator :
 		return JavaScript
 
 	def hookLibrary(self):
-		print("[+] Generate Library Hook Code...")
 		JavaScript = ''
+		
+		print("[+] Generate Library Hook Code...")
 		JavaScript += '\nInterceptor.attach(Module.findExportByName(null,"dlopen"),{\n'
 		JavaScript += '    onEnter: function(args){\n'
 		JavaScript += '        console.log(\'[+] Loading libraries\');\n'
@@ -56,6 +80,7 @@ class FridaHookGenerator :
 		JavaScript += '        console.log(\'    [+] \' + this.soName);\n'
 		JavaScript += '    }\n'
 		JavaScript += '});\n\n'
+		
 		return JavaScript
 	
 	def getSmaliPaths(self):
@@ -71,11 +96,6 @@ class FridaHookGenerator :
 					# add smali files
 					self.smali_files.append(os.path.join(path, file_name))
 		
-		# check smali_files list is null
-		if len(self.smali_files) == 0:
-			logging.critical("Can not find smali files.\nPlease input your smali files in \"" + self.smali_directory+"\" directory.\n")
-			exit(0)
-
 	def extractArguments(self, method_arg):
 		i = 0 
 		args = []
@@ -337,6 +357,12 @@ class FridaHookGenerator :
 
 		JavaScript = ''
 		
+		if self.importModules:
+			JavaScript += self.showImportModules()
+
+		if self.exportModules:
+			JavaScript += self.showExportModules()
+
 		if self.library:
 			JavaScript += self.hookLibrary()
 
@@ -356,14 +382,11 @@ class FridaHookGenerator :
 
 if __name__ == "__main__":
 
-	'''
+	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-c', '--config', required=True, type=str, help="Select a configure file.")
 	args = parser.parse_args()
 	config_filepath = os.path.abspath(args.config)
-	'''
-
-	config_filepath = "./config/sample.json"
 
 	if not os.path.isfile(config_filepath) :
 		logging.critical("Can not find configure file.\n")
@@ -378,42 +401,46 @@ if __name__ == "__main__":
 
 
 	# config file check
-	if not ('smaliDirectory' in config) or  \
-	not ('output' in config) or \
-	not ('options' in config) or \
-	not ('library' in config['options']) or \
-	not ('arguments' in config['options']) or\
-	not ('return' in config['options']) or \
-	not ('spb' in config['options']) or \
-	not ('oc' in config['options']) :
+	if not ('SmaliDirectory' in config) or  \
+	not ('Output' in config) or \
+	not ('Options' in config) or \
+	not ('Library' in config['Options']) or \
+	not ('Arguments' in config['Options']) or\
+	not ('Return' in config['Options']) or \
+	not ('SSLPinningBypass' in config['Options']) or \
+	not ('ExportModules' in config['Options']) or \
+	not ('ImportModules' in config['Options']) or \
+	not ('oc' in config['Options']):
 		logging.critical("Set up your config file.\n")
 		exit()
 
 	# change smalidirectory && output \ to /
-	config['smaliDirectory'].replace('\\','/')
-	config['output'].replace('\\','/')
+	config['SmaliDirectory'].replace('\\','/')
+	config['Output'].replace('\\','/')
 
 	# if output is directory
-	if os.path.isdir(config['output']):
+	if os.path.isdir(config['Output']):
 		print('Output is directory.\n')
 		exit()
 
-	sDir = config['smaliDirectory']
+	sDir = config['SmaliDirectory']
 
 	if os.path.exists(sDir) :
 		fmg = FridaHookGenerator(
 			sDirectory = sDir,
-			output = config['output'],
-			library = config['options']['library'],
-			arguments = config['options']['arguments'],
-			ret = config['options']['return'],
-			spb = config['options']['spb'],
-			oc = config['options']['oc']
+			output = config['Output'],
+			library = config['Options']['Library'],
+			arguments = config['Options']['Arguments'],
+			ret = config['Options']['Return'],
+			spb = config['Options']['SSLPinningBypass'],
+			exportModules = config['Options']['ExportModules'],
+			importModules = config['Options']['ImportModules'],
+			oc = config['Options']['oc']
 		)
 		fmg.getSmaliPaths()
 		fmg.run()
 
-		if config['output'] != "":
+		if config['Output'] != "":
 			fmg.save()
 
 	else :
