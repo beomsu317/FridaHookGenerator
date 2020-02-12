@@ -11,7 +11,7 @@ import threading
 import logging
 import shutil
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 class FridaHookGenerator :
 
@@ -328,12 +328,11 @@ class FridaHookGenerator :
 
 		while True :
 			if len(self.smali_files_fullpath) == 0 :
+				logging.info(' Done')
 				return
 			smali_file_path = self.smali_files_fullpath.pop()
 			logging.debug(' ' + smali_file_path)
 			self.save(smali_file_path,self.create_javascript(smali_file_path))
-
-		logging.info(' Done')
 
 
 if __name__ == "__main__":
@@ -345,8 +344,13 @@ if __name__ == "__main__":
 	if not args.directory or not args.output:
 		logging.error(' argv error')
 		exit()
-	
+
 	smail_directory = os.path.abspath(args.directory)
+	
+	if not os.path.exists(smail_directory):
+		logging.error(' smail directory is not exist')
+		exit()
+	
 	output = os.path.abspath(args.output)
 
 	fhg = FridaHookGenerator(smail_directory,output)
