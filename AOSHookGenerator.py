@@ -1,9 +1,3 @@
-# 1. so file intercept... and library method
-# 2. backtrace 
-# 3. instantly hook with frida
-# 4. constructor hook 
-# 5. no method in class not declare 
-
 import os
 import sys
 import argparse
