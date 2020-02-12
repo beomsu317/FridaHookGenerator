@@ -9,94 +9,46 @@ import sys
 import argparse
 import threading
 import logging
-import json
+import shutil
+
+logging.basicConfig(level=logging.INFO)
 
 class FridaHookGenerator :
 
-	def __init__(self, sDirectory, output, library=False, arguments=False, ret=False, spb=False, exportModules=False,importModules=False , oc=False) :
-
-		logging.getLogger().setLevel(logging.INFO)
+	def __init__(self, smail_directory,output) :
 			
-		# getcwd
 		self.cwd = os.getcwd()
-
-		# setting smali file directory absolute path
-		self.smali_directory = os.path.abspath(sDirectory)
-		self.library = library
-		self.arguments = arguments
-		self.ret = ret
+		self.smali_directory = smail_directory
 		self.output = output
-		self.spb = spb
-		self.exportModules = exportModules
-		self.importModules = importModules
-		self.onlyCode = oc
 
-		self.smali_files = []
-		self.JavaScript = []
+		self.hook_files_fullpath = []
+		self.smali_files_fullpath = []
 
-	def showImportModules(self):
-		print "[+] Generate Print Import Modules..."
-		JavaScript = ''
-		JavaScript += '\nModule.enumerateImports("%s", {\n'
-		JavaScript += '    onMatch: function(imp){\n'
-		JavaScript += '        console.log(\'[+] Import Module Name: \' + imp.name + \' - Module: \' + imp.module + \' - Address: \' + imp.address.toString());\n'
-		JavaScript += '    }, \n'
-		JavaScript += '    onComplete: function(){}\n'
-		JavaScript += '});\n'
-		return JavaScript
+		self.output_root = ''
 
-	def showExportModules(self):
-		print "[+] Generate Print Export Modules..."
-		JavaScript = ''
-		JavaScript += '\nProcess.enumerateModules({\n'
-		JavaScript += '    onMatch: function(module){\n'
-		JavaScript += '        console.log(\'[+] Export Module name: \' + module.name + " - " + "Base Address: " + module.base.toString());\n'
-		JavaScript += '    }, \n'
-		JavaScript += '    onComplete: function(){}\n'
-		JavaScript += '});\n'
-		return JavaScript
+	def set_output_path(self):
+		if not os.path.exists(self.output):
+			self.output_root = self.output
+		else:		
+			self.output_root = os.path.join(self.output,'_'.join([os.path.basename(self.smali_directory),'hook_code']))
 
-	def sslPinningBypass(self):
-		print("[+] Generate SSL Pinning Bypass Code...")
-		JavaScript = ''
-		JavaScript += '    // SSL Pinning Bypass Start---------------------------------\n'
-		JavaScript += '    var array_list = Java.use("java.util.ArrayList");\n'
-		JavaScript += '    var ApiClient = Java.use("com.android.org.conscrypt.TrustManagerImpl");\n\n'
-		JavaScript += '    ApiClient.checkTrustedRecursive.implementation = function(arg1,arg2,arg3,arg4,arg5,arg6) {\n'
-		JavaScript += '        var k = array_list.$new();\n'
-		JavaScript += '        return k;\n'
-		JavaScript += '    }\n'
-		JavaScript += '    // SSL Pinning Bypass End ----------------------------------\n\n'
-		return JavaScript
+		if os.path.exists(self.output_root):
+			try:
+				shutil.rmtree(self.output_root)
+			except Exception as e:
+				logging.error(e)
 
-	def hookLibrary(self):
-		JavaScript = ''
-		
-		print("[+] Generate Library Hook Code...")
-		JavaScript += '\nInterceptor.attach(Module.findExportByName(null,"dlopen"),{\n'
-		JavaScript += '    onEnter: function(args){\n'
-		JavaScript += '        console.log(\'[+] Loading libraries\');\n'
-		JavaScript += '        this.soName = Memory.readCString(args[0]);\n'
-		JavaScript += '        console.log(\'    [+] \' + this.soName);\n'
-		JavaScript += '    }\n'
-		JavaScript += '});\n\n'
-		
-		return JavaScript
-	
-	def getSmaliPaths(self):
-
-		# move smalis directory
-		os.chdir(self.smali_directory)
-
+	def get_smail_paths(self):
 		# find smali files in smalis directory and inside smali directory
 		for (path, d, files) in os.walk(self.smali_directory):
 			for file_name in files:
 				# check extension 
 				if file_name.endswith(".smali") :
 					# add smali files
-					self.smali_files.append(os.path.join(path, file_name))
+					file_fullpath = os.path.join(path, file_name)
+					self.smali_files_fullpath.append(file_fullpath)
 		
-	def extractArguments(self, method_arg):
+	def extract_arguments(self, method_arg):
 		i = 0 
 		args = []
 		isArray = False
@@ -113,7 +65,7 @@ class FridaHookGenerator :
 				else:
 					args.append(method_arg[i + 1:method_arg.find(';')])
 
-				logging.debug('    [+] ' + method_arg[i + 1:method_arg.find(';')])
+				logging.debug(' ' + method_arg[i + 1:method_arg.find(';')])
 
 				i = method_arg.find(';') + 1
 				method_arg = method_arg.replace(';',' ',1)
@@ -212,236 +164,195 @@ class FridaHookGenerator :
 
 		return args
 	
-	def save(self):
-		f = open(self.output, "w")
-		f.write(self.getFullJavaScript())
-		f.close()
+	def save(self,smali_file_path,javascript):
+		hook_path = '.'.join([os.path.splitext(smali_file_path.replace(self.smali_directory,self.output_root))[0],'js'])
+		hook_dir = os.path.dirname(hook_path)
+		if not os.path.exists(hook_dir):
+			os.makedirs(hook_dir)
+		
+		with open(hook_path,'w') as f:
+			f.write(javascript)
+
+	def create_javascript(self, smali_file_path):
+
+		javascript = "Java.perform(function() {\n"
+
+		with open(smali_file_path,'r') as smali_file:
+			
+			# JavaScript
+			logging.debug(' ' + smali_file_path + '\n')
+			
+			# read by line
+			smali_file_lines = smali_file.readlines()
+
+			for smali_file_line in smali_file_lines:
+				# find class name
+				if smali_file_line.split(' ')[0] == ".class":
+					# get full class name
+					smali_file_line =  smali_file_line.split(' ')
+					smali_file_line.reverse()
+					full_class_name = smali_file_line[0][1:]
+					full_class_name = full_class_name[:len(full_class_name)-2].replace('/','.')
+
+					logging.debug(" full_class_name: " + full_class_name)
+
+					# get class name
+					class_name = full_class_name.split('.')
+					class_name.reverse()
+					class_name = class_name[0]
+
+					logging.debug(" class_name: " + class_name)
+
+					# declare class 
+					javascript += '    var '+ class_name + ' = Java.use(\''+ full_class_name  +'\');\n\n'
+					continue
+				
+				
+				# find .method 
+				if smali_file_line.split(' ')[0]==".method":
+					# constructor hook
+					if 'constructor' in smali_file_line and \
+						not 'static' in smali_file_line:
+						
+						args = smali_file_line.split(' ').pop()
+						args = args[args.find('(')+1:args.rfind(')')]
+						args_list = self.extract_arguments(args)
+						args_len = len(args_list)
+
+						javascript += '    ' + class_name + '.$init.overload('
+						
+						for i in range(args_len):
+							if i == args_len - 1:
+								javascript += '\'' + args_list[i] + '\'' 
+							else:
+								javascript += '\'' + args_list[i] + '\'' + ','
+
+						args_string = ''
+						for i in range(args_len):
+							if i == args_len - 1:
+								args_string += 'arg' + str(i) 
+							else: 
+								args_string += 'arg' + str(i) + ','
+
+						javascript += ').implementation = function(' + args_string + ') {\n'
+
+						javascript += '        console.log(\'[Constructor] ' +  full_class_name + '(' + str(','.join(args_list)) + ')\');\n'
+						for i in range(args_len):
+							javascript +=  '        console.warn(\'    [arg'+str(i)+'] \' + arg' + str(i) + ');\n'
+						javascript += '        return this.$init(' + args_string + ');\n'
+						javascript += '    };\n\n'
+					
+					# method hook
+					elif not 'constructor' in smali_file_line:
+						logging.debug("")
+						method_line_list = smali_file_line.split(' ')
+						method_line_list.reverse()
+						method_line = method_line_list[0]
+
+						# extract method 
+						method_name = method_line.split('(')[0]
+						method_arg = method_line.split('(')[1].split(')')[0]
+						method_ret_type = method_line.split(')')[1].split('\n')[0]
+
+
+						logging.debug(" method_name: " + method_name)
+						logging.debug(" method_arg: " + method_arg)
+						logging.debug(" method_ret_type: " + method_ret_type)
+
+						# args extract
+						if len(method_arg) == 0:  # args is not exist
+							javascript += '    ' + class_name + '.' + method_name + '.overload().implementation = function(){\n'
+							javascript += '        console.log(\'[Method] ' +  full_class_name + '.' + method_name + '\');\n'
+
+							# create retval
+							javascript += '        var retval = this.' + method_name + '();\n'
+
+							# logging.info return
+							if method_ret_type != 'V':
+								javascript += '        console.warn(\'    [ret] \' + retval);\n'
+
+							# return method
+							javascript += '        return retval;\n'
+
+							javascript += '    };\n\n'
+							continue
+
+						else: # args exist
+							args_list = self.extract_arguments(method_arg)
+
+							logging.debug(" args_list: " + str(args_list))
+
+							# hook method 
+							# remove List's [,] and replace / to . and remove whitespace
+							javascript += '    ' + class_name + '.' + method_name + '.overload('+ str(args_list)[1:len(str(args_list))-1].replace('/','.').replace(' ','') +').implementation = function('
+
+							# set args_string Ex) arg0,arg1
+							args_string = ''
+							args_len = len(args_list)
+							for i in range(args_len):
+								args_string += 'arg'+str(i) 
+
+								# if last arg
+								if i != args_len - 1:
+									args_string += ','
+							javascript += args_string
+							javascript += '){\n'
+
+						# logging.info hook method name
+						javascript += '        console.log(\'[Method] ' + full_class_name + '.' + method_name + '('+ str(','.join(args_list)) + ')\');\n'
+
+						# logging.info args
+						for i in range(args_len):
+							javascript +=  '        console.warn(\'    [arg' + str(i) + '] \' + arg' + str(i) + ');\n'
+						
+						# create retval
+						javascript += '        var retval = this.' + method_name + '(' + args_string + ');\n'
+
+						# logging.info ret				
+						if method_ret_type != 'V':
+							javascript += '        console.warn(\'    [ret] \' + retval);\n'
+
+						# return method
+						javascript += '        return retval;\n'
+
+						javascript += '    };\n\n'
+		
+		javascript += "});\n"
+		return javascript
 
 	def run(self):
-		print('[+] Generate Hook Codes...')
-		threads = []
-		for i in range(0, 100) :
-			threads.append(threading.Thread(target = self.target))
-		for thread in threads :
-			thread.start()
-		for thread in threads :
-			thread.join()
-	
-	def target(self):
+		logging.info(' Generate AOS Hook Code')
+
+		self.set_output_path()
+		self.get_smail_paths()
+
 		while True :
-			if len(self.smali_files) == 0 :
+			if len(self.smali_files_fullpath) == 0 :
 				return
-			smali_file_path = self.smali_files.pop()
-			logging.debug('[+] ' + smali_file_path)
-			self.JavaScript.append(self.createJavaScript(smali_file_path))
+			smali_file_path = self.smali_files_fullpath.pop()
+			logging.debug(' ' + smali_file_path)
+			self.save(smali_file_path,self.create_javascript(smali_file_path))
 
-	def createJavaScript(self, smali_file_path):
+		logging.info(' Done')
 
-		JavaScript = ""
-
-
-		smali_file = open(smali_file_path,'r')
-
-		# JavaScript
-		logging.debug('[+] ' + smali_file_path + '\n')
-		
-		# read by line
-		smali_file_lines = smali_file.readlines()
-
-		for smali_file_line in smali_file_lines:
-			# find class name
-			if smali_file_line.split(' ')[0] == ".class":
-				# get full class name
-				smali_file_line =  smali_file_line.split(' ')
-				smali_file_line.reverse()
-				full_class_name = smali_file_line[0][1:]
-				full_class_name = full_class_name[:len(full_class_name)-2].replace('/','.')
-
-				logging.debug("[+] full_class_name: " + full_class_name)
-
-				# get class name
-				class_name = full_class_name.split('.')
-				class_name.reverse()
-				class_name = class_name[0]
-
-				logging.debug("[+] class_name: " + class_name)
-
-				# declare class 
-				JavaScript += '    var '+ class_name + ' = Java.use(\''+ full_class_name  +'\');\n\n'
-				continue
-
-			# find .method and no constructor
-			if smali_file_line.split(' ')[0]==".method" and smali_file_line.split(' ').count("constructor") == 0:
-				logging.debug("")
-				method_line_list = smali_file_line.split(' ')
-				method_line_list.reverse()
-				method_line = method_line_list[0]
-
-				# extract method 
-				method_name = method_line.split('(')[0]
-				method_arg = method_line.split('(')[1].split(')')[0]
-				method_ret_type = method_line.split(')')[1].split('\n')[0]
-
-
-				logging.debug("    [+] method_name: " + method_name)
-				logging.debug("    [+] method_arg: " + method_arg)
-				logging.debug("    [+] method_ret_type: " + method_ret_type)
-
-				# args extract
-				if len(method_arg) == 0:  # args is not exist
-					JavaScript += '    ' + class_name + '.' + method_name + '.overload().implementation = function(){\n'
-					JavaScript += '        console.log(\'[+] ' +  full_class_name + '.' + method_name + '\');\n'
-
-					# create retval
-					JavaScript += '        var retval = this.' + method_name + '();\n'
-
-					# print return
-					if self.ret and method_ret_type != 'V':
-						JavaScript += '        console.warn(\'    [+] return: \' + retval);\n'
-
-					# return method
-					JavaScript += '        return retval;\n'
-
-					JavaScript += '    };\n\n'
-					continue
-
-				else: # args exist
-					args_list = self.extractArguments(method_arg)
-
-					logging.debug("    [+] args_list: " + str(args_list))
-
-					# hook method 
-					# remove List's [,] and replace / to . and remove whitespace
-					JavaScript += '    ' + class_name + '.' + method_name + '.overload('+ str(args_list)[1:len(str(args_list))-1].replace('/','.').replace(' ','') +').implementation = function('
-
-					# set args_string Ex) arg0,arg1
-					args_string = ''
-					for i in range(len(args_list)):
-						args_string += 'arg'+str(i) 
-
-						# if last arg
-						if i != len(args_list) - 1:
-							args_string += ','
-					JavaScript += args_string
-					JavaScript += '){\n'
-
-				# print hook method name
-				JavaScript += '        console.log(\''+'[+] ' + full_class_name + '.' + method_name + '\');\n'
-
-				# print args
-				if self.arguments:
-					for i in range(len(args_list)):
-						JavaScript +=  '        console.warn(\'    [+] arg'+str(i)+': \' + arg' + str(i) + ');\n'
-				
-				# create retval
-				JavaScript += '        var retval = this.' + method_name + '(' + args_string + ');\n'
-
-				# print ret				
-				if self.ret and method_ret_type != 'V':
-						JavaScript += '        console.warn(\'    [+] return: \' + retval);\n'
-
-				# return method
-				JavaScript += '        return retval;\n'
-
-				JavaScript += '    };\n\n'
-						
-			smali_file.close()
-			# self.JavaScript += JavaScript
-			
-		# print('[+] done!')
-		# cd fridaHooker directory
-		os.chdir(self.cwd)
-		return JavaScript
-
-	def getFullJavaScript(self):
-
-		JavaScript = ''
-		
-		if self.importModules:
-			JavaScript += self.showImportModules()
-
-		if self.exportModules:
-			JavaScript += self.showExportModules()
-
-		if self.library:
-			JavaScript += self.hookLibrary()
-
-		if not self.onlyCode:
-			JavaScript += 'Java.perform(function() { \n    console.log();\n\n'
-
-		if self.spb:
-			JavaScript += self.sslPinningBypass()
-
-		JavaScript += '\n'.join(self.JavaScript)
-
-		if not self.onlyCode:
-			JavaScript += '});'
-
-		print('[+] Done!')
-		return JavaScript
 
 if __name__ == "__main__":
-
-	
 	parser = argparse.ArgumentParser()
-	parser.add_argument('-c', '--config', required=True, type=str, help="Select a configure file.")
+	parser.add_argument('-d', '--directory', required=True, type=str, help="Select a smali directory")
+	parser.add_argument('-o','--output',required=False,type=str,help="Select a output directory",default='./')
 	args = parser.parse_args()
-	config_filepath = os.path.abspath(args.config)
-
-	if not os.path.isfile(config_filepath) :
-		logging.critical("Can not find configure file.\n")
-		exit(0)
-
-	config = {}
-	with open(config_filepath, "r") as f :
-		try :
-			config = json.load(f)
-		except :
-			pass
-
-
-	# config file check
-	if not ('SmaliDirectory' in config) or  \
-	not ('Output' in config) or \
-	not ('Options' in config) or \
-	not ('Library' in config['Options']) or \
-	not ('Arguments' in config['Options']) or\
-	not ('Return' in config['Options']) or \
-	not ('SSLPinningBypass' in config['Options']) or \
-	not ('ExportModules' in config['Options']) or \
-	not ('ImportModules' in config['Options']) or \
-	not ('oc' in config['Options']):
-		logging.critical("Set up your config file.\n")
+		
+	if not args.directory or not args.output:
+		logging.error(' argv error')
 		exit()
+	
+	smail_directory = os.path.abspath(args.directory)
+	output = os.path.abspath(args.output)
 
-	# change smalidirectory && output \ to /
-	config['SmaliDirectory'].replace('\\','/')
-	config['Output'].replace('\\','/')
+	fhg = FridaHookGenerator(smail_directory,output)
+	
+	if not fhg:
+		logging.error(' FridaHookGenerator Class Error')
 
-	# if output is directory
-	if os.path.isdir(config['Output']):
-		print('Output is directory.\n')
-		exit()
+	fhg.run()
 
-	sDir = config['SmaliDirectory']
-
-	if os.path.exists(sDir) :
-		fmg = FridaHookGenerator(
-			sDirectory = sDir,
-			output = config['Output'],
-			library = config['Options']['Library'],
-			arguments = config['Options']['Arguments'],
-			ret = config['Options']['Return'],
-			spb = config['Options']['SSLPinningBypass'],
-			exportModules = config['Options']['ExportModules'],
-			importModules = config['Options']['ImportModules'],
-			oc = config['Options']['oc']
-		)
-		fmg.getSmaliPaths()
-		fmg.run()
-
-		if config['Output'] != "":
-			fmg.save()
-
-	else :
-		logging.critical("Can not find smali directory.\n")
