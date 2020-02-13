@@ -3,9 +3,9 @@ import sys
 import argparse
 import threading
 import logging
-import shutil
+from tqdm import tqdm
 
-logging.basicConfig(level=logging.INFO )
+logging.basicConfig(level=logging.INFO)
 
 class FridaHookGenerator :
 
@@ -27,10 +27,8 @@ class FridaHookGenerator :
 			self.output_root = os.path.join(self.output,'_'.join([os.path.basename(self.smali_directory),'hook_code']))
 
 		if os.path.exists(self.output_root):
-			try:
-				shutil.rmtree(self.output_root)
-			except Exception as e:
-				logging.error(e)
+			logging.error('Output directory existed')
+			exit()
 
 	def get_smail_paths(self):
 		# find smali files in smalis directory and inside smali directory
@@ -211,28 +209,26 @@ class FridaHookGenerator :
 						args = smali_file_line.split(' ').pop()
 						args = args[args.find('(')+1:args.rfind(')')]
 						args_list = self.extract_arguments(args)
+						#print(args_list)
 						args_len = len(args_list)
 
-						javascript += '    ' + class_name + '.$init.overload('
-						
-						for i in range(args_len):
-							if i == args_len - 1:
-								javascript += '\'' + args_list[i] + '\'' 
-							else:
-								javascript += '\'' + args_list[i] + '\'' + ','
-
 						args_string = ''
+						args_quota_added = []
 						for i in range(args_len):
+							# replace / to .
+							args_list[i] = args_list[i].replace('/','.')
+							args_quota_added.append('\'' + args_list[i] + '\'')
+
+							# arg string create ex) arg0,arg1
 							if i == args_len - 1:
 								args_string += 'arg' + str(i) 
 							else: 
 								args_string += 'arg' + str(i) + ','
 
-						javascript += ').implementation = function(' + args_string + ') {\n'
-
-						javascript += '        console.log(\'[Constructor] ' +  full_class_name + '(' + str(','.join(args_list)) + ')\');\n'
+						javascript += '    ' + class_name + '.$init.overload(' + ','.join(args_quota_added) + ').implementation = function(' + args_string + ') {\n'
+						javascript += '        console.log(\'[Constructor] ' +  full_class_name + '(' + ','.join(args_list) + ')\');\n'
 						for i in range(args_len):
-							javascript +=  '        console.warn(\'    [arg'+str(i)+'] \' + arg' + str(i) + ');\n'
+							javascript +=  '        console.log(\'    ['+ full_class_name + '(' + ','.join(args_list) + ')] [arg'+str(i)+'] \' + arg' + str(i) + ');\n'
 						javascript += '        return this.$init(' + args_string + ');\n'
 						javascript += '    };\n\n'
 					
@@ -256,14 +252,14 @@ class FridaHookGenerator :
 						# args extract
 						if len(method_arg) == 0:  # args is not exist
 							javascript += '    ' + class_name + '.' + method_name + '.overload().implementation = function(){\n'
-							javascript += '        console.log(\'[Method] ' +  full_class_name + '.' + method_name + '\');\n'
+							javascript += '        console.log(\'[Method] ' +  full_class_name + '.' + method_name + '()\');\n'
 
 							# create retval
 							javascript += '        var retval = this.' + method_name + '();\n'
 
 							# logging.info return
 							if method_ret_type != 'V':
-								javascript += '        console.warn(\'    [ret] \' + retval);\n'
+								javascript += '        console.log(\'    ['+full_class_name + '.' + method_name + '()] [ret] \' + retval);\n'
 
 							# return method
 							javascript += '        return retval;\n'
@@ -276,35 +272,35 @@ class FridaHookGenerator :
 
 							logging.debug(" args_list: " + str(args_list))
 
-							# hook method 
-							# remove List's [,] and replace / to . and remove whitespace
-							javascript += '    ' + class_name + '.' + method_name + '.overload('+ str(args_list)[1:len(str(args_list))-1].replace('/','.').replace(' ','') +').implementation = function('
-
-							# set args_string Ex) arg0,arg1
 							args_string = ''
 							args_len = len(args_list)
-							for i in range(args_len):
-								args_string += 'arg'+str(i) 
+							args_quota_added = []
 
+							for i in range(args_len):
+								# replace / to .
+								args_list[i] = args_list[i].replace('/','.')
+								args_quota_added.append('\'' + args_list[i] + '\'')
+								# arg string create
+								args_string += 'arg' + str(i) 
 								# if last arg
 								if i != args_len - 1:
 									args_string += ','
-							javascript += args_string
-							javascript += '){\n'
 
-						# logging.info hook method name
-						javascript += '        console.log(\'[Method] ' + full_class_name + '.' + method_name + '('+ str(','.join(args_list)) + ')\');\n'
+						javascript += '    ' + class_name + '.' + method_name + '.overload(' + ','.join(args_quota_added)  + ').implementation = function('+ args_string +'){\n'
 
-						# logging.info args
+						# print hook method name
+						javascript += '        console.log(\'[Method] ' + full_class_name + '.' + method_name + '('+ ','.join(args_list) + ')\');\n'
+
+						# print args
 						for i in range(args_len):
-							javascript +=  '        console.warn(\'    [arg' + str(i) + '] \' + arg' + str(i) + ');\n'
+							javascript +=  '        console.log(\'    [' + full_class_name + '.' + method_name + '('+ ','.join(args_list) + ')] [arg' + str(i) + '] \' + arg' + str(i) + ');\n'
 						
 						# create retval
 						javascript += '        var retval = this.' + method_name + '(' + args_string + ');\n'
 
-						# logging.info ret				
+						# print ret				
 						if method_ret_type != 'V':
-							javascript += '        console.warn(\'    [ret] \' + retval);\n'
+							javascript += '        console.log(\'    [' + full_class_name + '.' + method_name + '('+ ','.join(args_list) + ')] [ret] \' + retval);\n'
 
 						# return method
 						javascript += '        return retval;\n'
@@ -320,13 +316,11 @@ class FridaHookGenerator :
 		self.set_output_path()
 		self.get_smail_paths()
 
-		while True :
-			if len(self.smali_files_fullpath) == 0 :
-				logging.info(' Done')
-				return
+		for i in tqdm(range(len(self.smali_files_fullpath))):
 			smali_file_path = self.smali_files_fullpath.pop()
 			logging.debug(' ' + smali_file_path)
 			self.save(smali_file_path,self.create_javascript(smali_file_path))
+		logging.info(' Done')
 
 
 if __name__ == "__main__":
