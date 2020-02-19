@@ -228,7 +228,7 @@ class FridaHookGenerator :
 						javascript += '    ' + class_name + '.$init.overload(' + ','.join(args_quota_added) + ').implementation = function(' + args_string + ') {\n'
 						javascript += '        console.log(\'[Constructor] ' +  full_class_name + '(' + ','.join(args_list) + ')\');\n'
 						for i in range(args_len):
-							javascript +=  '        console.log(\'    ['+ full_class_name + '(' + ','.join(args_list) + ')] [arg'+str(i)+'] \' + arg' + str(i) + ');\n'
+							javascript +=  '        console.log(\'    [arg'+str(i)+'] \' + arg' + str(i) + ');\n'
 						javascript += '        return this.$init(' + args_string + ');\n'
 						javascript += '    };\n\n'
 					
@@ -293,7 +293,7 @@ class FridaHookGenerator :
 
 						# print args
 						for i in range(args_len):
-							javascript +=  '        console.log(\'    [' + full_class_name + '.' + method_name + '('+ ','.join(args_list) + ')] [arg' + str(i) + '] \' + arg' + str(i) + ');\n'
+							javascript +=  '        console.log(\'    [arg' + str(i) + '] \' + arg' + str(i) + ');\n'
 						
 						# create retval
 						javascript += '        var retval = this.' + method_name + '(' + args_string + ');\n'
