@@ -259,7 +259,7 @@ class FridaHookGenerator :
 
 							# logging.info return
 							if method_ret_type != 'V':
-								javascript += '        console.log(\'    ['+full_class_name + '.' + method_name + '()] [ret] \' + retval);\n'
+								javascript += '        console.log(\'    [ret] \' + retval);\n'
 
 							# return method
 							javascript += '        return retval;\n'
@@ -300,7 +300,7 @@ class FridaHookGenerator :
 
 						# print ret				
 						if method_ret_type != 'V':
-							javascript += '        console.log(\'    [' + full_class_name + '.' + method_name + '('+ ','.join(args_list) + ')] [ret] \' + retval);\n'
+							javascript += '        console.log(\'    [ret] \' + retval);\n'
 
 						# return method
 						javascript += '        return retval;\n'
