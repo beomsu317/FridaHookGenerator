@@ -5,5 +5,5 @@ Auto Frida Hook Generator
 ## Usage
 
 ```
-python3
+python3 AOSHookGenerator.py
 ```
