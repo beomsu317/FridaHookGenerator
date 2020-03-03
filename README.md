@@ -2,8 +2,8 @@
 
 Auto Frida Hook Generator
 
-## Usage
+## AOS Usage
 
 ```
-python3 AOSHookGenerator.py
+python3 AOSHookGenerator.py -d directory
 ```
